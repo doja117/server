@@ -1,33 +1,36 @@
 package main
 
 import (
+	"log"
 	"net/http"
 )
 
-func main() {
-	m := http.NewServeMux()
-	imgDir := http.FileServer(http.Dir("./assets/logo.png"))
-	m.Handle("./assets/logo.png", imgDir)
-	m.Handle("/", http.FileServer(http.Dir(".")))
-	m.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		w.Write([]byte("OK"))
-	})
-	corsMux := middleWareCors(m)
-	s := http.Server{}
-	s.Handler = corsMux
-	s.Addr = "localhost:8080"
-	s.ListenAndServe()
+type apiConfig struct {
+	fileServerHits int
 }
-func middleWareCors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+
+func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
+	return cfg.fileServerHits
+}
+func handlerReadiness(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type ", "text/plain;charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(http.StatusText(http.StatusOK)))
+}
+
+func main() {
+
+	filePathRoot := "."
+	port := "8080"
+
+	mux := http.NewServeMux()
+	mux.Handle("/app/", http.StripPrefix("/app", http.FileServer(http.Dir(filePathRoot))))
+	mux.HandleFunc("/healthz", handlerReadiness)
+	mux.HandleFunc("/reset", middlewareMetricsInc)
+	corsMux := middlewareCors(mux)
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: corsMux,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
